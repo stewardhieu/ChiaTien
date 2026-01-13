@@ -17,7 +17,10 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Linting - ĐÃ TẮT KIỂM TRA BIẾN THỪA Ở ĐÂY */
+    /* QUAN TRỌNG: Dòng này giúp sửa lỗi import.meta.env */
+    "types": ["vite/client"],
+
+    /* Linting (đã tắt check lỗi vặt) */
     "strict": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
