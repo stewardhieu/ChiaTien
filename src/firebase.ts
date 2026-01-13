@@ -1,9 +1,9 @@
 import { initializeApp } from "firebase/app";
-// import { getAnalytics } from "firebase/analytics"; // Nếu cần
-// import { getFirestore } from "firebase/firestore"; // Nếu cần
+import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
 
+// Cấu hình từ biến môi trường
 const firebaseConfig = {
-  // Chú ý: Tên biến môi trường bên phải phải khớp với tên bạn đặt trên Vercel
   apiKey: import.meta.env.VITE_API_KEY,
   authDomain: import.meta.env.VITE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_PROJECT_ID,
@@ -12,8 +12,16 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_APP_ID
 };
 
+// 1. Khởi tạo App
 const app = initializeApp(firebaseConfig);
-// const db = getFirestore(app);
 
-export default app; 
-// export { db };
+// 2. Khởi tạo Auth & Google Provider (Để App.tsx dùng được 'auth')
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
+
+// 3. Khởi tạo Database (Để App.tsx dùng được 'db')
+const db = getFirestore(app);
+
+// 4. Xuất khẩu các biến này ra ngoài
+export { auth, provider, db };
+export default app;
