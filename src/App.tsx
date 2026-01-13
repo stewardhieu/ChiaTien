@@ -3,11 +3,15 @@ import {
   Plus, Trash2, Users, DollarSign, Calendar, CheckCircle, XCircle, 
   ChevronDown, ChevronUp, Copy, Save, UtensilsCrossed, 
   PieChart, RotateCcw, RotateCw, Filter, Clock, Edit3, Database, Search, X, 
-  RefreshCcw, LayoutList, TrendingUp, History, ArrowRight, HelpCircle, FileText, ChevronRight, AlertCircle, BookOpen, User, Menu
+  RefreshCcw, LayoutList, TrendingUp, History, ArrowRight, HelpCircle, FileText, ChevronRight, AlertCircle, BookOpen, User, Menu, LogOut, Lock
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Cell, PieChart as RePieChart, Pie
 } from 'recharts';
+
+// --- FIREBASE IMPORTS ---
+import { auth } from './firebase'; // Đảm bảo bạn đã tạo file này ở Bước 2
+import { signInWithEmailAndPassword, onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 
 // --- Theme & Style ---
 const THEME_COLOR = '#000066'; // Navy Blue
@@ -357,10 +361,102 @@ const RecordForm = ({ initialData, onSubmit, onCancel, submitLabel, people }: {
     );
 };
 
+// --- LOGIN COMPONENT ---
+const LoginScreen = ({ onLogin }: { onLogin: (e: React.FormEvent, m: string, p: string) => void }) => {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState('');
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsLoading(true);
+        setError('');
+        try {
+            await onLogin(e, email, password);
+        } catch (err: any) {
+             console.error(err);
+             if (err.code === 'auth/invalid-credential') setError('Email hoặc mật khẩu không đúng.');
+             else if (err.code === 'auth/too-many-requests') setError('Quá nhiều lần thử sai. Hãy đợi một chút.');
+             else setError('Đăng nhập thất bại: ' + err.message);
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
+    return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4" style={{ backgroundColor: '#f0f4f8' }}>
+            <div className="max-w-md w-full bg-white rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-500">
+                 <div className="p-8 pb-6 text-center text-white" style={{ backgroundColor: THEME_COLOR }}>
+                     <div className="bg-white/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
+                        <UtensilsCrossed className="w-8 h-8 text-white" />
+                     </div>
+                     <h1 className="text-2xl font-bold">SỔ ĂN UỐNG</h1>
+                     <p className="text-blue-200 text-sm mt-1">Đăng nhập để quản lý chi tiêu</p>
+                 </div>
+                 
+                 <div className="p-8 pt-6">
+                     {error && (
+                         <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-4 flex items-center gap-2 border border-red-100">
+                             <AlertCircle className="w-4 h-4 shrink-0"/> {error}
+                         </div>
+                     )}
+                     <form onSubmit={handleSubmit} className="space-y-4">
+                         <div>
+                             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Email</label>
+                             <input 
+                                type="email" 
+                                required
+                                value={email}
+                                onChange={e => setEmail(e.target.value)}
+                                className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-800 focus:border-transparent outline-none transition-all"
+                                placeholder="name@example.com"
+                             />
+                         </div>
+                         <div>
+                             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Mật khẩu</label>
+                             <input 
+                                type="password" 
+                                required
+                                value={password}
+                                onChange={e => setPassword(e.target.value)}
+                                className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-800 focus:border-transparent outline-none transition-all"
+                                placeholder="••••••••"
+                             />
+                         </div>
+                         <button 
+                            type="submit" 
+                            disabled={isLoading}
+                            className="w-full py-3.5 rounded-xl font-bold text-white transition-all transform active:scale-[0.98] shadow-lg mt-2 flex justify-center items-center gap-2"
+                            style={{ backgroundColor: THEME_COLOR }}
+                         >
+                            {isLoading ? (
+                                <RefreshCcw className="w-5 h-5 animate-spin" />
+                            ) : (
+                                <>
+                                    <Lock className="w-4 h-4" /> ĐĂNG NHẬP
+                                </>
+                            )}
+                         </button>
+                     </form>
+                     <p className="text-center text-xs text-gray-400 mt-6">
+                        © 2026 Ứng dụng quản lý nội bộ.
+                     </p>
+                 </div>
+            </div>
+        </div>
+    )
+}
+
 const App = () => {
+  // --- AUTH STATE ---
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
   // --- History & State ---
   const [history, setHistory] = useState<AppState[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  // Safe default state if history is empty
   const currentState = history[historyIndex] || { people: [], records: [] };
   const { people, records } = currentState;
 
@@ -386,24 +482,46 @@ const App = () => {
   const [showSampleOptions, setShowSampleOptions] = useState(false);
   const [expandedReportRows, setExpandedReportRows] = useState<Record<string, boolean>>({});
 
-  // --- Initialization ---
+  // --- Initialization & Auth Check ---
   useEffect(() => {
-    const savedPeople = localStorage.getItem('lunch_people_v13');
-    const savedRecords = localStorage.getItem('lunch_records_v13');
-    const initialState: AppState = {
-      people: savedPeople ? JSON.parse(savedPeople) : [],
-      records: savedRecords ? JSON.parse(savedRecords) : []
-    };
-    setHistory([initialState]);
-    setHistoryIndex(0);
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+        setCurrentUser(user);
+        setAuthLoading(false);
+    });
+    return () => unsubscribe();
   }, []);
 
+  // Load data ONLY if logged in
   useEffect(() => {
-    if (history.length > 0) {
+    if (currentUser) {
+        const savedPeople = localStorage.getItem('lunch_people_v13');
+        const savedRecords = localStorage.getItem('lunch_records_v13');
+        const initialState: AppState = {
+          people: savedPeople ? JSON.parse(savedPeople) : [],
+          records: savedRecords ? JSON.parse(savedRecords) : []
+        };
+        setHistory([initialState]);
+        setHistoryIndex(0);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (currentUser && history.length > 0) {
       localStorage.setItem('lunch_people_v13', JSON.stringify(people));
       localStorage.setItem('lunch_records_v13', JSON.stringify(records));
     }
-  }, [people, records, history]);
+  }, [people, records, history, currentUser]);
+
+  // --- Authentication Handlers ---
+  const handleLogin = async (e: React.FormEvent, email: string, pass: string) => {
+      await signInWithEmailAndPassword(auth, email, pass);
+  };
+
+  const handleLogout = async () => {
+      if(confirm('Bạn có chắc muốn đăng xuất?')) {
+          await signOut(auth);
+      }
+  };
 
   // --- Dispatcher ---
   const dispatch = useCallback((action: Action) => {
@@ -523,24 +641,23 @@ const App = () => {
   };
 
   const handleSaveRecord = (record: any, isEdit: boolean) => {
-     if (!record.title) return alert('Thiếu nội dung chi!');
-     if (!record.totalAmount || record.totalAmount <= 0) return alert('Số tiền không hợp lệ!');
-     if (!record.payer) return alert('Chưa chọn người chi!');
-     if (!record.participants || record.participants.length === 0) return alert('Chưa chọn người tham gia!');
+      if (!record.title) return alert('Thiếu nội dung chi!');
+      if (!record.totalAmount || record.totalAmount <= 0) return alert('Số tiền không hợp lệ!');
+      if (!record.payer) return alert('Chưa chọn người chi!');
+      if (!record.participants || record.participants.length === 0) return alert('Chưa chọn người tham gia!');
 
-     const perPerson = Math.ceil(record.totalAmount / record.participants.length);
-     
-     // Correctly map participant status from form data
-     const fullParticipants: ParticipantStatus[] = record.participants.map((p: any) => {
+      const perPerson = Math.ceil(record.totalAmount / record.participants.length);
+      
+      const fullParticipants: ParticipantStatus[] = record.participants.map((p: any) => {
         const isPayer = p.name === record.payer;
         return {
-            name: p.name,
-            paid: isPayer ? true : p.paid, // Payer is always considered paid
-            paidAt: isPayer ? (p.paidAt || new Date().toISOString()) : (p.paid ? (p.paidAt || new Date().toISOString()) : null)
+           name: p.name,
+           paid: isPayer ? true : p.paid,
+           paidAt: isPayer ? (p.paidAt || new Date().toISOString()) : (p.paid ? (p.paidAt || new Date().toISOString()) : null)
         };
-     });
+      });
 
-     const finalRecord: MealRecord = {
+      const finalRecord: MealRecord = {
          id: isEdit && editingRecord ? editingRecord.id : generateId(),
          createdAt: isEdit && editingRecord ? editingRecord.createdAt : Date.now(),
          date: record.date || new Date().toISOString().slice(0, 10),
@@ -549,23 +666,37 @@ const App = () => {
          perPersonAmount: perPerson,
          payer: record.payer || '',
          participants: fullParticipants
-     };
+      };
 
-     if (isEdit) {
-         dispatch({ type: 'UPDATE_RECORD', payload: finalRecord });
-         setEditingRecord(null);
-     } else {
-         dispatch({ type: 'ADD_RECORD', payload: finalRecord });
-         // Alert or toast could go here
-     }
+      if (isEdit) {
+          dispatch({ type: 'UPDATE_RECORD', payload: finalRecord });
+          setEditingRecord(null);
+      } else {
+          dispatch({ type: 'ADD_RECORD', payload: finalRecord });
+      }
   };
 
   const toggleReportRow = (name: string) => {
       setExpandedReportRows(prev => ({ ...prev, [name]: !prev[name] }));
   }
 
-  // --- Logic for Unified View ---
+  // --- VIEW LOGIC ---
 
+  // 1. Loading State
+  if (authLoading) {
+      return (
+          <div className="min-h-screen flex items-center justify-center bg-gray-50">
+               <RefreshCcw className="w-8 h-8 text-blue-900 animate-spin" />
+          </div>
+      );
+  }
+
+  // 2. Unauthenticated State
+  if (!currentUser) {
+      return <LoginScreen onLogin={handleLogin} />;
+  }
+
+  // 3. Main App Logic (Computed only when logged in)
   const filteredRecords = records.filter(r => r.date >= startDate && r.date <= endDate);
   const totalFilteredSpent = filteredRecords.reduce((sum, r) => sum + r.totalAmount, 0);
 
@@ -660,12 +791,21 @@ const App = () => {
                 <span className="text-xs text-blue-200 opacity-80 font-medium hidden sm:block">Quản lý tài chính văn phòng</span>
             </div>
           </div>
-          <button 
-            onClick={() => setShowGuide(true)}
-            className="flex items-center gap-1 bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg text-sm font-bold transition-colors"
-          >
-            <BookOpen className="w-5 h-5 sm:w-4 sm:h-4"/> <span className="hidden sm:inline">HƯỚNG DẪN</span>
-          </button>
+          <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setShowGuide(true)}
+                className="flex items-center gap-1 bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg text-sm font-bold transition-colors"
+              >
+                <BookOpen className="w-5 h-5 sm:w-4 sm:h-4"/> <span className="hidden sm:inline">HƯỚNG DẪN</span>
+              </button>
+              <button 
+                onClick={handleLogout}
+                className="flex items-center gap-1 bg-red-600/80 hover:bg-red-600 px-3 py-2 rounded-lg text-sm font-bold transition-colors text-white"
+                title="Đăng xuất"
+              >
+                <LogOut className="w-5 h-5 sm:w-4 sm:h-4"/> 
+              </button>
+          </div>
         </div>
       </header>
 
@@ -717,7 +857,7 @@ const App = () => {
         {/* TAB 2: DEBT & HISTORY (MERGED) */}
         {activeTab === 'debt_history' && (
           <div className="space-y-6 animate-enter">
-             
+              
              {/* Unified Filter */}
              <AnimatedCard className="p-4 flex flex-col md:flex-row gap-4 border-l-4 border-blue-500 items-center sticky top-[130px] z-10 shadow-md">
                 <div className="flex flex-col sm:flex-row gap-2 items-center flex-1 w-full">
@@ -756,26 +896,26 @@ const App = () => {
                                 </div>
                                 {expandedCreditor === item.name && (
                                     <div className="mt-3 pt-3 border-t border-green-100 text-sm space-y-2 animate-enter">
-                                        {filteredRecords.map(r => {
-                                             if (r.payer === item.name) {
-                                                 const unpaid = r.participants.filter(p => !p.paid && p.name !== item.name);
-                                                 if (unpaid.length > 0) {
-                                                     return (
-                                                         <div key={r.id} className="flex justify-between items-start py-2 border-b border-gray-50 last:border-0 hover:bg-gray-50 rounded px-1">
-                                                             <div className="flex-1 pr-2">
-                                                                 <div className="font-medium text-gray-700">{r.title}</div>
-                                                                 <div className="text-[10px] text-gray-400">{formatShortDate(r.date)}</div>
-                                                                 <div className="text-[11px] text-red-500 font-medium mt-0.5">Chưa trả: {unpaid.map(p => p.name).join(', ')}</div>
-                                                             </div>
-                                                             <div className="font-medium text-green-600 text-right whitespace-nowrap">
-                                                                <div>+{formatCurrency(r.perPersonAmount * unpaid.length)}</div>
-                                                             </div>
-                                                         </div>
-                                                     )
-                                                 }
-                                             }
-                                             return null;
-                                        })}
+                                            {filteredRecords.map(r => {
+                                               if (r.payer === item.name) {
+                                                  const unpaid = r.participants.filter(p => !p.paid && p.name !== item.name);
+                                                  if (unpaid.length > 0) {
+                                                      return (
+                                                          <div key={r.id} className="flex justify-between items-start py-2 border-b border-gray-50 last:border-0 hover:bg-gray-50 rounded px-1">
+                                                               <div className="flex-1 pr-2">
+                                                                  <div className="font-medium text-gray-700">{r.title}</div>
+                                                                  <div className="text-[10px] text-gray-400">{formatShortDate(r.date)}</div>
+                                                                  <div className="text-[11px] text-red-500 font-medium mt-0.5">Chưa trả: {unpaid.map(p => p.name).join(', ')}</div>
+                                                               </div>
+                                                               <div className="font-medium text-green-600 text-right whitespace-nowrap">
+                                                                  <div>+{formatCurrency(r.perPersonAmount * unpaid.length)}</div>
+                                                               </div>
+                                                          </div>
+                                                      )
+                                                  }
+                                               }
+                                               return null;
+                                            })}
                                     </div>
                                 )}
                             </div>
@@ -804,58 +944,58 @@ const App = () => {
                                 </div>
                                 {expandedPerson === item.name && (
                                     <div className="mt-4 space-y-4 animate-enter">
-                                        <div className="bg-red-50 rounded p-2 text-sm border border-red-100">
-                                            <div className="flex justify-between items-center mb-2 pb-2 border-b border-red-200">
-                                                <span className="text-[10px] font-bold text-red-800 uppercase">Chưa trả</span>
-                                                <button 
-                                                    onClick={() => dispatch({type: 'MARK_ALL_PAID', payload: {personName: item.name}})}
-                                                    className="text-[10px] bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 uppercase font-bold"
-                                                >
-                                                    Trả hết ngay
-                                                </button>
+                                            <div className="bg-red-50 rounded p-2 text-sm border border-red-100">
+                                                <div className="flex justify-between items-center mb-2 pb-2 border-b border-red-200">
+                                                    <span className="text-[10px] font-bold text-red-800 uppercase">Chưa trả</span>
+                                                    <button 
+                                                        onClick={() => dispatch({type: 'MARK_ALL_PAID', payload: {personName: item.name}})}
+                                                        className="text-[10px] bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 uppercase font-bold"
+                                                    >
+                                                        Trả hết ngay
+                                                    </button>
+                                                </div>
+                                                {filteredRecords.map(r => {
+                                                    const p = r.participants.find(part => part.name === item.name);
+                                                    if (p && !p.paid && r.payer !== item.name) {
+                                                        return (
+                                                            <div key={r.id} className="flex justify-between items-center py-2 border-b border-red-100/50 last:border-0 hover:bg-white rounded px-1 transition-colors">
+                                                                <div className="flex-1 pr-2">
+                                                                    <div className="font-medium text-gray-800">{r.title}</div>
+                                                                    <div className="text-[10px] text-gray-500">{formatShortDate(r.date)} • Ứng: <b>{r.payer}</b></div>
+                                                                </div>
+                                                                <div className="flex items-center gap-3">
+                                                                    <span className="font-bold text-red-600 whitespace-nowrap">{formatCurrency(r.perPersonAmount)}</span>
+                                                                    <input type="checkbox" className="w-5 h-5 accent-blue-600 cursor-pointer" onChange={() => dispatch({type: 'TOGGLE_PAID', payload: {recordId: r.id, personName: item.name}})}/>
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    }
+                                                    return null;
+                                                })}
                                             </div>
-                                            {filteredRecords.map(r => {
-                                                const p = r.participants.find(part => part.name === item.name);
-                                                if (p && !p.paid && r.payer !== item.name) {
-                                                    return (
-                                                        <div key={r.id} className="flex justify-between items-center py-2 border-b border-red-100/50 last:border-0 hover:bg-white rounded px-1 transition-colors">
-                                                            <div className="flex-1 pr-2">
-                                                                <div className="font-medium text-gray-800">{r.title}</div>
-                                                                <div className="text-[10px] text-gray-500">{formatShortDate(r.date)} • Ứng: <b>{r.payer}</b></div>
+                                            
+                                            {/* PAID HISTORY */}
+                                            <div className="bg-gray-50 rounded p-2 text-sm border border-gray-200">
+                                                <div className="text-[10px] font-bold text-gray-500 uppercase mb-2 border-b pb-1">Lịch sử đã trả</div>
+                                                {filteredRecords.map(r => {
+                                                    const p = r.participants.find(part => part.name === item.name);
+                                                    if (p && p.paid && r.payer !== item.name) {
+                                                        return (
+                                                            <div key={r.id} className="flex justify-between items-center py-1.5 opacity-70 hover:opacity-100 border-b border-gray-100 last:border-0">
+                                                                <div className="flex-1 pr-2">
+                                                                    <div className="font-medium text-gray-600 line-through decoration-gray-400">{r.title}</div>
+                                                                    <div className="text-[9px] text-blue-600">Đã trả: {p.paidAt ? formatDateTime(p.paidAt) : '---'}</div>
+                                                                </div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-gray-500 text-xs line-through whitespace-nowrap">{formatCurrency(r.perPersonAmount)}</span>
+                                                                    <input type="checkbox" checked={true} className="w-4 h-4 accent-gray-400 cursor-pointer" onChange={() => dispatch({type: 'TOGGLE_PAID', payload: {recordId: r.id, personName: item.name}})}/>
+                                                                </div>
                                                             </div>
-                                                            <div className="flex items-center gap-3">
-                                                                <span className="font-bold text-red-600 whitespace-nowrap">{formatCurrency(r.perPersonAmount)}</span>
-                                                                <input type="checkbox" className="w-5 h-5 accent-blue-600 cursor-pointer" onChange={() => dispatch({type: 'TOGGLE_PAID', payload: {recordId: r.id, personName: item.name}})}/>
-                                                            </div>
-                                                        </div>
-                                                    )
-                                                }
-                                                return null;
-                                            })}
-                                        </div>
-                                        
-                                        {/* PAID HISTORY */}
-                                        <div className="bg-gray-50 rounded p-2 text-sm border border-gray-200">
-                                            <div className="text-[10px] font-bold text-gray-500 uppercase mb-2 border-b pb-1">Lịch sử đã trả</div>
-                                            {filteredRecords.map(r => {
-                                                const p = r.participants.find(part => part.name === item.name);
-                                                if (p && p.paid && r.payer !== item.name) {
-                                                    return (
-                                                        <div key={r.id} className="flex justify-between items-center py-1.5 opacity-70 hover:opacity-100 border-b border-gray-100 last:border-0">
-                                                            <div className="flex-1 pr-2">
-                                                                <div className="font-medium text-gray-600 line-through decoration-gray-400">{r.title}</div>
-                                                                <div className="text-[9px] text-blue-600">Đã trả: {p.paidAt ? formatDateTime(p.paidAt) : '---'}</div>
-                                                            </div>
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="text-gray-500 text-xs line-through whitespace-nowrap">{formatCurrency(r.perPersonAmount)}</span>
-                                                                <input type="checkbox" checked={true} className="w-4 h-4 accent-gray-400 cursor-pointer" onChange={() => dispatch({type: 'TOGGLE_PAID', payload: {recordId: r.id, personName: item.name}})}/>
-                                                            </div>
-                                                        </div>
-                                                    )
-                                                }
-                                                return null;
-                                            })}
-                                        </div>
+                                                        )
+                                                    }
+                                                    return null;
+                                                })}
+                                            </div>
                                     </div>
                                 )}
                             </div>
@@ -911,10 +1051,10 @@ const App = () => {
                                              <div className="flex flex-wrap gap-2 mt-3 mb-4">
                                                  {record.participants.map(p => (
                                                      <div 
-                                                        key={p.name} 
-                                                        className={`px-2 py-1 rounded border text-xs flex items-center gap-1 transition-colors cursor-help
-                                                        ${p.paid ? 'bg-green-50 text-green-700 border-green-200 font-bold shadow-sm' : 'bg-gray-50 text-gray-500 border-gray-100'}`}
-                                                        title={p.paid && p.paidAt ? `Đã trả lúc: ${formatDateTime(p.paidAt)}` : 'Chưa trả'}
+                                                         key={p.name} 
+                                                         className={`px-2 py-1 rounded border text-xs flex items-center gap-1 transition-colors cursor-help
+                                                         ${p.paid ? 'bg-green-50 text-green-700 border-green-200 font-bold shadow-sm' : 'bg-gray-50 text-gray-500 border-gray-100'}`}
+                                                         title={p.paid && p.paidAt ? `Đã trả lúc: ${formatDateTime(p.paidAt)}` : 'Chưa trả'}
                                                      >
                                                          {p.name} 
                                                          {p.paid && <CheckCircle className="w-3 h-3"/>}
