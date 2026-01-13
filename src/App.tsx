@@ -1,4 +1,4 @@
-@ -3,58 +3,18 @@ import {
+import {
   Plus, Trash2, Users, DollarSign, Calendar, CheckCircle, XCircle, 
   ChevronDown, ChevronUp, Copy, Save, UtensilsCrossed, 
   PieChart, RotateCcw, RotateCw, Filter, Clock, Edit3, Database, Search, X, 
