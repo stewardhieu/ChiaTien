@@ -3,17 +3,19 @@ import {
   Plus, Trash2, Users, CheckCircle, XCircle, 
   ChevronDown, Copy, UtensilsCrossed, 
   PieChart, Filter, Edit3, Database, Search, X, 
-  LayoutList, History, ArrowRight, BookOpen, FileText, ChevronRight
+  LayoutList, History, ArrowRight, BookOpen, FileText, ChevronRight,
+  LogOut, LogIn // <--- Icon mới
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Cell, PieChart as RePieChart, Pie
 } from 'recharts';
 
 // --- FIREBASE IMPORTS ---
-import { db } from './firebase';
+import { db, auth, googleProvider } from './firebase'; // <--- Thêm auth
 import { 
-  collection, onSnapshot, addDoc, setDoc, deleteDoc, updateDoc, doc, query, orderBy, Timestamp 
+  collection, onSnapshot, addDoc, setDoc, deleteDoc, updateDoc, doc, query, orderBy
 } from 'firebase/firestore';
+import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth'; // <--- Thêm hàm Auth
 
 // --- Theme & Style ---
 const THEME_COLOR = '#000066'; 
@@ -34,10 +36,6 @@ interface MealRecord {
   perPersonAmount: number;
   payer: string;
   participants: ParticipantStatus[];
-}
-
-interface Person {
-    name: string;
 }
 
 // --- Helper Functions ---
@@ -77,7 +75,6 @@ const copyToClipboard = (text: string) => {
   if (navigator.clipboard && window.isSecureContext) {
     return navigator.clipboard.writeText(text);
   } else {
-    // Fallback for older browsers
     const textArea = document.createElement("textarea");
     textArea.value = text;
     textArea.style.position = "fixed";
@@ -85,11 +82,7 @@ const copyToClipboard = (text: string) => {
     document.body.appendChild(textArea);
     textArea.focus();
     textArea.select();
-    try {
-        document.execCommand('copy');
-    } catch (err) {
-        console.error('Copy failed', err);
-    }
+    try { document.execCommand('copy'); } catch (err) { console.error(err); }
     document.body.removeChild(textArea);
   }
 };
@@ -332,7 +325,38 @@ const RecordForm = ({ initialData, onSubmit, onCancel, submitLabel, people }: {
     );
 };
 
+// --- LOGIN COMPONENT ---
+const LoginScreen = ({ onLogin }: { onLogin: () => void }) => {
+    return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden text-center p-8 animate-enter">
+                <div className="w-16 h-16 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <UtensilsCrossed className="w-8 h-8"/>
+                </div>
+                <h2 className="text-2xl font-bold text-blue-900 mb-2">Sổ Ăn Uống Pro</h2>
+                <p className="text-gray-500 mb-8">Vui lòng đăng nhập để xem và quản lý chi tiêu.</p>
+                
+                <button 
+                    onClick={onLogin}
+                    className="w-full flex items-center justify-center gap-3 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-bold py-3 px-4 rounded-xl transition-all shadow-sm group"
+                >
+                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google"/>
+                    Đăng nhập bằng Google
+                    <LogIn className="w-4 h-4 opacity-50 group-hover:opacity-100 transition-opacity ml-auto"/>
+                </button>
+                <div className="mt-8 text-xs text-gray-400">
+                    Ứng dụng nội bộ - Dữ liệu được bảo mật.
+                </div>
+            </div>
+        </div>
+    );
+}
+
 const App = () => {
+  // --- Auth State ---
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
   // --- Firebase State ---
   const [people, setPeople] = useState<string[]>([]);
   const [records, setRecords] = useState<MealRecord[]>([]);
@@ -349,13 +373,25 @@ const App = () => {
   const [expandedCreditor, setExpandedCreditor] = useState<string | null>(null);
   const [expandedReportRows, setExpandedReportRows] = useState<Record<string, boolean>>({});
 
+  // --- Auth Listener ---
+  useEffect(() => {
+      const unsubAuth = onAuthStateChanged(auth, (user) => {
+          setCurrentUser(user);
+          setAuthLoading(false);
+      });
+      return () => unsubAuth();
+  }, []);
+
   // --- Firebase Listeners ---
   useEffect(() => {
+    if (!currentUser) return; // Chỉ load dữ liệu khi đã login
+
+    setLoading(true);
     // 1. Listen for People
     const unsubPeople = onSnapshot(collection(db, "people"), (snapshot) => {
         const list = snapshot.docs.map(doc => doc.data().name).sort();
         setPeople(list);
-    });
+    }, (error) => console.error(error));
 
     // 2. Listen for Records
     const q = query(collection(db, "records"), orderBy("createdAt", "desc"));
@@ -363,20 +399,37 @@ const App = () => {
         const list = snapshot.docs.map(doc => doc.data() as MealRecord);
         setRecords(list);
         setLoading(false);
+    }, (error) => {
+        console.error(error);
+        setLoading(false);
     });
 
     return () => {
         unsubPeople();
         unsubRecords();
     }
-  }, []);
+  }, [currentUser]); // Chạy lại khi currentUser thay đổi
 
   // --- Handlers (Direct Firebase Operations) ---
+  
+  const handleLogin = async () => {
+      try {
+          await signInWithPopup(auth, googleProvider);
+      } catch (error) {
+          alert('Đăng nhập thất bại. Vui lòng thử lại!');
+          console.error(error);
+      }
+  }
+
+  const handleLogout = async () => {
+      if(confirm('Đăng xuất khỏi tài khoản?')) {
+          await signOut(auth);
+      }
+  }
   
   const handleAddPerson = async (name: string) => {
     const trimmedName = name.trim();
     if (trimmedName && !people.includes(trimmedName)) {
-      // Use name as Doc ID to prevent duplicates easily
       await setDoc(doc(db, "people", trimmedName), { name: trimmedName });
       setNewPersonName('');
     }
@@ -416,7 +469,6 @@ const App = () => {
          participants: fullParticipants
      };
 
-     // Save to Firestore
      await setDoc(doc(db, "records", finalRecord.id), finalRecord);
      
      if (isEdit) setEditingRecord(null);
@@ -441,12 +493,10 @@ const App = () => {
   }
 
   const handleMarkAllPaid = async (personName: string) => {
-      // Find all unpaid records for this person
       const unpaidRecords = records.filter(r => 
         r.participants.some(p => p.name === personName && !p.paid && r.payer !== personName)
       );
 
-      // Batch updates are better, but looping updateDoc is simpler for now
       for (const r of unpaidRecords) {
           const updatedParticipants = r.participants.map(p => {
               if (p.name === personName && !p.paid) {
@@ -460,9 +510,7 @@ const App = () => {
 
   const handleClearData = async () => {
       if(confirm('CẢNH BÁO: Hành động này sẽ xóa sạch dữ liệu trên Database của TẤT CẢ mọi người. Bạn có chắc không?')) {
-          // Delete all records
           records.forEach(r => deleteDoc(doc(db, "records", r.id)));
-          // Delete all people
           people.forEach(p => deleteDoc(doc(db, "people", p)));
       }
   }
@@ -536,6 +584,16 @@ const App = () => {
     setExpandedReportRows(prev => ({ ...prev, [name]: !prev[name] }));
   }
 
+  // --- RENDER LOGIC ---
+
+  if (authLoading) return <div className="h-screen flex items-center justify-center bg-gray-50 text-blue-800 font-bold animate-pulse">Đang kiểm tra đăng nhập...</div>;
+
+  // Nếu chưa đăng nhập -> Hiện Login Screen
+  if (!currentUser) {
+      return <LoginScreen onLogin={handleLogin} />;
+  }
+
+  // Nếu đã đăng nhập mà đang load dữ liệu -> Hiện Loading
   if (loading) return <div className="h-screen flex items-center justify-center text-blue-800 font-bold">Đang tải dữ liệu...</div>;
 
   return (
@@ -563,15 +621,27 @@ const App = () => {
                 <h1 className="text-lg font-bold uppercase tracking-wide leading-tight flex items-center gap-1">
                     Sổ Ăn Uống <span className="text-yellow-400 text-xs bg-white/20 px-1.5 py-0.5 rounded ml-1 hidden sm:inline-block">Online</span>
                 </h1>
-                <span className="text-xs text-blue-200 opacity-80 font-medium hidden sm:block">Đồng bộ Cloud Firestore</span>
+                <div className="flex items-center gap-2 text-xs text-blue-200 opacity-90 font-medium">
+                    <img src={currentUser.photoURL || ''} className="w-4 h-4 rounded-full border border-blue-300"/>
+                    <span className="max-w-[100px] truncate">Hi, {currentUser.displayName}</span>
+                </div>
             </div>
           </div>
-          <button 
-            onClick={() => setShowGuide(true)}
-            className="flex items-center gap-1 bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg text-sm font-bold transition-colors"
-          >
-            <BookOpen className="w-5 h-5 sm:w-4 sm:h-4"/> <span className="hidden sm:inline">HƯỚNG DẪN</span>
-          </button>
+          <div className="flex gap-2">
+            <button 
+                onClick={() => setShowGuide(true)}
+                className="flex items-center gap-1 bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg text-sm font-bold transition-colors"
+            >
+                <BookOpen className="w-5 h-5 sm:w-4 sm:h-4"/> <span className="hidden sm:inline">HDSD</span>
+            </button>
+            <button 
+                onClick={handleLogout}
+                className="flex items-center gap-1 bg-red-500/20 hover:bg-red-500/40 px-3 py-2 rounded-lg text-sm font-bold transition-colors text-red-100"
+                title="Đăng xuất"
+            >
+                <LogOut className="w-5 h-5 sm:w-4 sm:h-4"/>
+            </button>
+          </div>
         </div>
       </header>
 
