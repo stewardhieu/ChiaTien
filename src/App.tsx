@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Users, CheckCircle, XCircle, 
   ChevronDown, Copy, UtensilsCrossed, 
   PieChart, RotateCcw, RotateCw, Filter, Edit3, Database, X, 
-  LayoutList, History, BookOpen, Lock, Loader2, LogOut, Cloud, CloudOff
+  LayoutList, History, BookOpen, Lock, Loader2, LogOut, Cloud, ArrowRight
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell, PieChart as RePieChart, Pie, Legend
@@ -12,7 +12,7 @@ import {
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, User } from "firebase/auth";
-import { getFirestore, doc, setDoc, onSnapshot, enableIndexedDbPersistence } from "firebase/firestore";
+import { getFirestore, doc, setDoc, onSnapshot } from "firebase/firestore";
 
 // --- FIREBASE CONFIGURATION (THAY THẾ BẰNG KEY CỦA BẠN) ---
 const firebaseConfig = {
@@ -108,7 +108,7 @@ const copyToClipboard = (text: string) => {
     const textArea = document.createElement("textarea");
     textArea.value = text;
     textArea.style.position = "fixed";
-    textArea.left = "-9999px";
+    textArea.style.left = "-9999px";
     document.body.appendChild(textArea);
     textArea.focus();
     textArea.select();
@@ -205,7 +205,13 @@ const LoginScreen = ({ onLoginSuccess }: { onLoginSuccess: (user: User) => void 
                         type="submit" disabled={loading}
                         className="w-full bg-blue-900 text-white py-3 rounded-lg font-bold hover:bg-blue-800 transition-all flex justify-center items-center gap-2 shadow-lg hover:shadow-xl active:scale-[0.98]"
                     >
-                        {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Lock className="w-4 h-4" /> ĐĂNG NHẬP</>}
+                        {loading ? (
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                          <React.Fragment>
+                            <Lock className="w-4 h-4" /> ĐĂNG NHẬP
+                          </React.Fragment>
+                        )}
                     </button>
                 </form>
             </AnimatedCard>
@@ -366,7 +372,7 @@ const RecordForm = ({ initialData, onSubmit, onCancel, submitLabel, people }: {
 const App = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [dataLoading, setDataLoading] = useState(false); // New state for data fetch
+  const [dataLoading, setDataLoading] = useState(false);
 
   // --- History & State ---
   const [history, setHistory] = useState<AppState[]>([]);
@@ -393,19 +399,14 @@ const App = () => {
       setAuthLoading(false);
       
       if (user) {
-        // Logged in: Subscribe to Firestore
         setDataLoading(true);
-        const docRef = doc(db, "lunch_app", "main_data"); // Single shared document
+        const docRef = doc(db, "lunch_app", "main_data");
         const unsubscribeData = onSnapshot(docRef, (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data() as AppState;
-                // Only update if data is different to avoid loops/re-renders
-                // Simplified: Just set history on external change
-                // Warning: This resets undo history on remote change. Acceptable for simple apps.
                 setHistory([data]);
                 setHistoryIndex(0);
             } else {
-                // Init if not exists
                 setHistory([{ people: [], records: [] }]);
                 setHistoryIndex(0);
             }
@@ -413,7 +414,6 @@ const App = () => {
         });
         return () => unsubscribeData();
       } else {
-        // Not logged in: Clear data or keep? Let's clear for security
         setHistory([{ people: [], records: [] }]);
         setHistoryIndex(0);
       }
@@ -426,10 +426,7 @@ const App = () => {
   
   const saveToFirestore = (newState: AppState) => {
       if (!currentUser) return;
-      
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      
-      // Debounce save to avoid too many writes
       saveTimeoutRef.current = setTimeout(async () => {
           try {
               await setDoc(doc(db, "lunch_app", "main_data"), newState);
@@ -480,7 +477,6 @@ const App = () => {
         case 'LOAD_SAMPLE_DATA':
           newState.people = ["Khánh", "Minh Anh", "Hiếu", "Chị Trang"];
           if (action.payload === 'full') {
-             // ... (Keep existing logic)
              const now = new Date(); const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
              newState.records = [
                 { id: generateId(), date: now.toISOString().slice(0, 10), createdAt: Date.now(), title: "Cafe sáng (Team họp)", totalAmount: 180000, perPersonAmount: 45000, payer: "Khánh", participants: [ { name: "Khánh", paid: true, paidAt: now.toISOString() }, { name: "Minh Anh", paid: false }, { name: "Hiếu", paid: false }, { name: "Chị Trang", paid: false } ] },
@@ -491,53 +487,29 @@ const App = () => {
         case 'CLEAR_DATA': newState = { people: [], records: [] }; break;
         default: return prevHistory;
       }
-
-      // 1. Update Local History (Optimistic UI)
       const newHistory = prevHistory.slice(0, historyIndex + 1);
       newHistory.push(newState);
       setHistoryIndex(newHistory.length - 1);
-
-      // 2. Trigger Save to Firestore
       saveToFirestore(newState);
-
       return newHistory;
     });
-  }, [historyIndex, currentUser]); // Depends on currentUser
+  }, [historyIndex, currentUser]);
 
-  // --- Handlers ---
-  const handleUndo = () => {
-      if (historyIndex > 0) {
-          const newIndex = historyIndex - 1;
-          setHistoryIndex(newIndex);
-          saveToFirestore(history[newIndex]); // Sync the undone state
-      }
-  };
-  const handleRedo = () => {
-      if (historyIndex < history.length - 1) {
-          const newIndex = historyIndex + 1;
-          setHistoryIndex(newIndex);
-          saveToFirestore(history[newIndex]); // Sync the redone state
-      }
-  };
+  const handleUndo = () => { if (historyIndex > 0) { const newIndex = historyIndex - 1; setHistoryIndex(newIndex); saveToFirestore(history[newIndex]); } };
+  const handleRedo = () => { if (historyIndex < history.length - 1) { const newIndex = historyIndex + 1; setHistoryIndex(newIndex); saveToFirestore(history[newIndex]); } };
 
   const handleAddPerson = (name: string) => {
     const trimmedName = name.trim();
-    if (trimmedName && !people.includes(trimmedName)) {
-      dispatch({ type: 'ADD_PERSON', payload: trimmedName });
-      setNewPersonName('');
-    }
+    if (trimmedName && !people.includes(trimmedName)) { dispatch({ type: 'ADD_PERSON', payload: trimmedName }); setNewPersonName(''); }
   };
 
   const handleSaveRecord = (record: any, isEdit: boolean) => {
-     // ... (Keep existing validation logic)
      if (!record.title || !record.totalAmount || record.totalAmount <= 0 || !record.payer || !record.participants.length) return alert('Thông tin chưa đủ!');
-
      const perPerson = Math.ceil(record.totalAmount / record.participants.length);
      const fullParticipants: ParticipantStatus[] = record.participants.map((p: any) => {
         const isPayer = p.name === record.payer;
         return { name: p.name, paid: isPayer ? true : p.paid, paidAt: isPayer ? (p.paidAt || new Date().toISOString()) : (p.paid ? (p.paidAt || new Date().toISOString()) : null) };
      });
-
      const finalRecord: MealRecord = {
          id: isEdit && editingRecord ? editingRecord.id : generateId(),
          createdAt: isEdit && editingRecord ? editingRecord.createdAt : Date.now(),
@@ -548,12 +520,10 @@ const App = () => {
          payer: record.payer || '',
          participants: fullParticipants
      };
-
      if (isEdit) { dispatch({ type: 'UPDATE_RECORD', payload: finalRecord }); setEditingRecord(null); } 
      else { dispatch({ type: 'ADD_RECORD', payload: finalRecord }); }
   };
 
-  // --- LOGIC FOR VIEW (Copy from previous) ---
   const filteredRecords = records.filter(r => r.date >= startDate && r.date <= endDate);
   const totalFilteredSpent = filteredRecords.reduce((sum, r) => sum + r.totalAmount, 0);
 
@@ -562,9 +532,7 @@ const App = () => {
     people.forEach(p => balances[p] = { owed: 0, debt: 0, net: 0, meals: [] });
     filteredRecords.forEach(r => {
        r.participants.forEach(p => {
-          if (balances[p.name]) {
-              balances[p.name].meals.push({ id: r.id, date: r.date, title: r.title, amount: r.perPersonAmount, isPaid: p.paid });
-          }
+          if (balances[p.name]) balances[p.name].meals.push({ id: r.id, date: r.date, title: r.title, amount: r.perPersonAmount, isPaid: p.paid });
           if (p.name !== r.payer && !p.paid) {
              if (balances[p.name]) balances[p.name].debt += r.perPersonAmount;
              if (balances[r.payer]) balances[r.payer].owed += r.perPersonAmount;
@@ -585,7 +553,6 @@ const App = () => {
   const sortedHistoryDates = Object.keys(historyByDate).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
   const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
 
-  // --- RENDER ---
   if (authLoading) return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-blue-900 font-bold"><Loader2 className="w-8 h-8 animate-spin mr-2"/> Đang tải...</div>;
   if (!currentUser) return <LoginScreen onLoginSuccess={setCurrentUser} />;
 
@@ -597,16 +564,11 @@ const App = () => {
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
-      
       {showGuide && <GuideModal onClose={() => setShowGuide(false)} />}
-
-      {/* Undo/Redo */}
       <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-2">
         <button onClick={handleRedo} disabled={historyIndex >= history.length - 1} className="bg-white p-3 rounded-full shadow-lg border hover:bg-blue-50 disabled:opacity-50 transition-all"><RotateCw className="w-5 h-5 text-gray-700" /></button>
         <button onClick={handleUndo} disabled={historyIndex <= 0} className="bg-white p-3 rounded-full shadow-lg border hover:bg-blue-50 disabled:opacity-50 transition-all"><RotateCcw className="w-5 h-5 text-gray-700" /></button>
       </div>
-
-      {/* Header */}
       <header className="text-white p-4 shadow-lg sticky top-0 z-30 transition-all" style={{ backgroundColor: THEME_COLOR }}>
         <div className="max-w-5xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3">
@@ -625,8 +587,6 @@ const App = () => {
           </div>
         </div>
       </header>
-
-      {/* Nav */}
       <div className="bg-white shadow-sm sticky top-[72px] z-20 border-b border-gray-100">
         <nav className="max-w-5xl mx-auto flex overflow-x-auto no-scrollbar snap-x">
            {[
@@ -651,8 +611,6 @@ const App = () => {
             </AnimatedCard>
           </div>
         )}
-
-        {/* --- DEBT & HISTORY VIEW --- */}
         {activeTab === 'debt_history' && (
              <div className="space-y-6 animate-enter">
                 <AnimatedCard className="p-4 flex flex-col md:flex-row gap-4 border-l-4 border-blue-500 items-center sticky top-[130px] z-10 shadow-md">
@@ -661,9 +619,7 @@ const App = () => {
                        <div className="flex items-center gap-2 w-full"><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="border border-gray-300 p-2 rounded text-sm outline-none flex-1 w-full"/><ArrowRight className="w-4 h-4 text-gray-400 shrink-0"/><input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border border-gray-300 p-2 rounded text-sm outline-none flex-1 w-full"/></div>
                    </div>
                 </AnimatedCard>
-
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                    {/* Creditors */}
                     <AnimatedCard className="overflow-hidden border-green-100">
                         <div className="bg-green-50/80 p-4 border-b border-green-100 flex items-center justify-between backdrop-blur-sm"><h4 className="font-bold text-green-800 flex items-center gap-2"><CheckCircle className="w-5 h-5" /> CẦN THU VỀ</h4></div>
                         <div className="divide-y divide-gray-100">
@@ -694,8 +650,6 @@ const App = () => {
                             ))}
                         </div>
                     </AnimatedCard>
-
-                    {/* Debtors */}
                     <AnimatedCard className="overflow-hidden border-red-100">
                         <div className="bg-red-50/80 p-4 border-b border-red-100 flex items-center justify-between backdrop-blur-sm"><h4 className="font-bold text-red-800 flex items-center gap-2"><XCircle className="w-5 h-5" /> CẦN PHẢI TRẢ</h4></div>
                         <div className="divide-y divide-gray-100">
@@ -733,8 +687,6 @@ const App = () => {
                         </div>
                     </AnimatedCard>
                 </div>
-                
-                {/* Timeline */}
                 <div className="mt-8 pt-8 border-t-2 border-dashed border-gray-200">
                      <div className="flex flex-col md:flex-row justify-between items-center mb-6"><h3 className="font-bold text-lg text-gray-700 flex items-center gap-2"><History className="w-6 h-6 text-blue-600"/> Nhật Ký Giao Dịch</h3></div>
                      {sortedHistoryDates.length === 0 ? <div className="text-center py-12 text-gray-400 bg-white rounded-xl border-2 border-dashed border-gray-200">Không có dữ liệu.</div> : (
@@ -771,8 +723,6 @@ const App = () => {
                 </div>
              </div>
         )}
-
-        {/* --- REPORT VIEW (Simplified for brevity but functional) --- */}
         {activeTab === 'report' && (
              <div className="space-y-6 animate-enter">
                   <AnimatedCard className="p-4 flex flex-col md:flex-row items-end gap-4">
@@ -792,11 +742,8 @@ const App = () => {
                            </AnimatedCard>
                       </div>
                   )}
-                  {/* Summary Table Logic remains same, omitted for space but included in core render via netBalances */}
              </div>
         )}
-
-        {/* --- PEOPLE VIEW --- */}
         {activeTab === 'people' && (
           <div className="animate-enter max-w-3xl mx-auto">
              <AnimatedCard className="p-4 sm:p-6">
@@ -832,7 +779,6 @@ const App = () => {
         )}
       </main>
       
-      {/* EDIT MODAL */}
       {editingRecord && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm animate-in fade-in duration-200">
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden transform transition-all scale-100">
