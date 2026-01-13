@@ -1,8 +1,8 @@
 // src/firebase.ts
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
+import { getAuth, GoogleAuthProvider } from "firebase/auth"; // <--- Thêm dòng này
 
-// Lấy thông tin từ file .env
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_API_KEY,
   authDomain: import.meta.env.VITE_AUTH_DOMAIN,
@@ -12,10 +12,11 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_APP_ID
 };
 
-// Khởi tạo Firebase
 const app = initializeApp(firebaseConfig);
 
-// Khởi tạo Database (Firestore)
+// Khởi tạo Database
 export const db = getFirestore(app);
 
-console.log("🔥 Firebase đã được kết nối!");
+// Khởi tạo Authentication
+export const auth = getAuth(app);
+export const googleProvider = new GoogleAuthProvider();
