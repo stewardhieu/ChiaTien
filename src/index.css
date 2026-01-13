@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Xóa hết các dòng như :root, body { display: flex... } cũ nếu có */
+
+body {
+  background-color: #f9fafb;
+  margin: 0;
+  padding: 0;
+  /* Đảm bảo không có display: flex hay place-items: center ở đây */
+}
